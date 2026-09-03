@@ -1,0 +1,374 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课表 &amp; 考试提醒</title>
+<style>
+  :root{
+    --bg:#eef1f8; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --line:#e5e9f2; --accent:#6366f1; --accent2:#8b5cf6; --danger:#ef4444; --ok:#10b981;
+    --radius:16px; --shadow:0 6px 24px rgba(31,41,80,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:14px}
+  body{font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif;background:linear-gradient(180deg,#eef1f8 0%,#e6ebf7 100%);color:var(--ink);min-height:100vh;padding-bottom:90px}
+  button{font-family:inherit;cursor:pointer}
+  input,select{font-family:inherit}
+  .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:12px 20px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.25rem}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:1.2rem;box-shadow:0 4px 12px rgba(99,102,241,.35)}
+  .brand small{display:block;font-size:.72rem;color:var(--sub);font-weight:400}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 13px;border-radius:10px;font-size:.85rem;transition:.15s;white-space:nowrap}
+  .btn:hover{border-color:var(--accent);color:var(--accent);background:#f7f7ff}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;box-shadow:0 4px 12px rgba(99,102,241,.3)}
+  .btn.primary:hover{filter:brightness(1.06);color:#fff}
+  .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+  .status{font-size:.8rem;color:var(--sub)}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px 18px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:16px}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;border:1px solid rgba(255,255,255,.6)}
+  .card h3{font-size:.82rem;color:var(--sub);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .big{font-size:1.5rem;font-weight:800}
+  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:.75rem;background:#eef2ff;color:var(--accent);font-weight:600}
+  .pill.warn{background:#fff7ed;color:#ea580c}
+  .pill.ok{background:#ecfdf5;color:#059669}
+  .pill.gray{background:#f1f3f6;color:#6b7280}
+  .row{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:.85rem;margin-top:4px}
+  .sec{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:16px;border:1px solid rgba(255,255,255,.6)}
+  .sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+  .sec-head h2{font-size:1.05rem;display:flex;align-items:center;gap:8px}
+  .tbl-head{display:grid;grid-template-columns:52px repeat(7,1fr);gap:0;border-bottom:1px solid var(--line)}
+  .tbl-head div{text-align:center;font-size:.78rem;padding:8px 2px;color:var(--sub);border-left:1px solid var(--line)}
+  .tbl-head div:first-child{border-left:none}
+  .tbl-head .today-h{color:var(--accent);font-weight:700}
+  .grid-body{display:grid;grid-template-columns:52px repeat(7,1fr);position:relative;background:repeating-linear-gradient(to bottom,#fff 0px,#fff 59px,#edf0f8 59px,#edf0f8 60px);border-radius:0 0 12px 12px;overflow:hidden}
+  .gutter{position:relative;height:840px}
+  .gutter span{position:absolute;right:8px;font-size:.68rem;color:#9aa1b2;transform:translateY(-50%)}
+  .day-col{position:relative;height:840px;border-left:1px solid var(--line)}
+  .day-col.today{background:rgba(99,102,241,.035)}
+  .course{position:absolute;left:4px;right:4px;border-radius:9px;padding:6px 7px;font-size:.74rem;line-height:1.35;color:#fff;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.12);cursor:pointer;transition:transform .1s}
+  .course:hover{transform:scale(1.02);z-index:5}
+  .course b{display:block;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .course .meta{opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now-line{position:absolute;left:0;right:0;height:2px;background:var(--danger);z-index:6;pointer-events:none}
+  .now-line::after{content:"现在";position:absolute;right:0;top:-9px;font-size:.62rem;color:#fff;background:var(--danger);padding:1px 5px;border-radius:6px}
+  .empty-tip{color:#9aa1b2;text-align:center;padding:40px 10px;font-size:.9rem}
+  .exam-item{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px dashed var(--line);flex-wrap:wrap}
+  .exam-item:last-child{border-bottom:none}
+  .exam-item .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .exam-item .name{font-weight:600;min-width:120px}
+  .exam-item .when{color:var(--sub);font-size:.85rem;flex:1;min-width:140px}
+  .exam-item .del{margin-left:auto}
+  .footer{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:.85rem;z-index:40}
+  .footer label{display:flex;align-items:center;gap:6px;color:var(--sub)}
+  .footer input[type=number]{width:64px;padding:4px 6px;border:1px solid var(--line);border-radius:8px}
+  .footer input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+  .overlay{position:fixed;inset:0;background:rgba(23,25,40,.45);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .overlay.show{display:flex}
+  .modal{background:#fff;border-radius:18px;width:100%;max-width:460px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow:auto}
+  .modal h2{margin-bottom:16px;font-size:1.15rem}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-grid .full{grid-column:1/-1}
+  .field label{display:block;font-size:.8rem;color:var(--sub);margin-bottom:5px}
+  .field input,.field select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;font-size:.9rem;background:#fbfcfe;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+  .modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .toast-wrap{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+  .toast{background:#1f2430;color:#fff;padding:10px 18px;border-radius:12px;font-size:.85rem;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:pop .25s ease;max-width:88vw}
+  @keyframes pop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  @media(max-width:820px){
+    .grid-body,.tbl-head{overflow-x:auto}
+    .day-col{min-width:120px}
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">📅</div>
+    <div>课表 &amp; 考试提醒<small>大学生 AI 实战 · 单文件本地运行</small></div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="actions">
+    <button class="btn" id="btnSample" title="载入一套示例课表，方便体验">✨ 载入示例</button>
+    <button class="btn" id="btnExport">⬇ 导出</button>
+    <button class="btn" id="btnImport">⬆ 导入</button>
+    <button class="btn danger" id="btnClear">🗑 清空</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="cards" id="summary"></section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>🗓 本周课表</h2>
+      <button class="btn primary" id="btnAddCourse">＋ 添加课程</button>
+    </div>
+    <div class="tbl-head" id="tblHead"></div>
+    <div class="grid-body" id="gridBody"></div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>📝 考试倒计时</h2>
+      <button class="btn primary" id="btnAddExam">＋ 添加考试</button>
+    </div>
+    <div id="examList"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <label><input type="checkbox" id="notifyOn"> 开启系统通知提醒</label>
+  <label>上课提前 <input type="number" id="courseLead" min="0" max="120"> 分钟提醒</label>
+  <label>考试提前 <input type="number" id="examLead" min="0" max="1440"> 分钟提醒</label>
+  <span class="status">数据保存在本机浏览器，可随时导出备份</span>
+</footer>
+
+<!-- 课程弹窗 -->
+<div class="overlay" id="ovCourse">
+  <div class="modal">
+    <h2 id="courseModalTitle">添加课程</h2>
+    <div class="form-grid">
+      <div class="field full"><label>课程名称 *</label><input id="cName" placeholder="例如：高等数学"></div>
+      <div class="field"><label>星期</label><select id="cDay"></select></div>
+      <div class="field"><label>颜色</label><select id="cColor"></select></div>
+      <div class="field"><label>开始时间</label><input type="time" id="cStart" value="08:00"></div>
+      <div class="field"><label>结束时间</label><input type="time" id="cEnd" value="09:40"></div>
+      <div class="field full"><label>地点</label><input id="cLoc" placeholder="例如：教1-101"></div>
+      <div class="field full"><label>教师（选填）</label><input id="cTeacher" placeholder="选填"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn" id="courseDel" style="margin-right:auto;display:none">删除</button>
+      <button class="btn" id="courseCancel">取消</button>
+      <button class="btn primary" id="courseSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 考试弹窗 -->
+<div class="overlay" id="ovExam">
+  <div class="modal">
+    <h2 id="examModalTitle">添加考试</h2>
+    <div class="form-grid">
+      <div class="field full"><label>考试科目 *</label><input id="eName" placeholder="例如：高等数学期中"></div>
+      <div class="field"><label>日期</label><input type="date" id="eDate"></div>
+      <div class="field"><label>时间</label><input type="time" id="eTime" value="09:00"></div>
+      <div class="field full"><label>地点（选填）</label><input id="eLoc" placeholder="例如：教2-201"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn" id="examDel" style="margin-right:auto;display:none">删除</button>
+      <button class="btn" id="examCancel">取消</button>
+      <button class="btn primary" id="examSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+'use strict';
+/* ============ 数据 ============ */
+const KEY='schedule_exam_reminder_v1';
+const NK='schedule_exam_reminder_notified_v1';
+const DAYS=['周一','周二','周三','周四','周五','周六','周日'];
+const COLORS=['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#14b8a6','#f97316','#84cc16','#3b82f6','#d946ef'];
+let state=load()||{courses:[],exams:[],settings:{courseLead:10,examLead:60,notify:true}};
+
+function load(){try{const s=localStorage.getItem(KEY);return s?JSON.parse(s):null}catch(e){return null}}
+function save(){localStorage.setItem(KEY,JSON.stringify(state))}
+function notifiedLoad(){try{return new Set(JSON.parse(localStorage.getItem(NK)||'[]'))}catch(e){return new Set()}}
+function notifiedSave(s){localStorage.setItem(NK,JSON.stringify([...s]))}
+let notified=notifiedLoad();
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function pad(n){return String(n).padStart(2,'0')}
+function toMin(hhmm){const a=String(hhmm).split(':');return (+a[0])*60+(+a[1]||0)}
+function minToHM(m){return pad(Math.floor(m/60))+':'+pad(m%60)}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function mondayOf(d){const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+function fmtCN(date){const m=date.getMonth()+1;const d=date.getDate();const w=DAYS[(date.getDay()+6)%7];return m+'月'+d+'日 '+w}
+function fmtDur(min){if(min<1)return '马上';if(min<60)return min+' 分钟';if(min<60*24){const h=Math.floor(min/60);return h+' 小时 '+(min%60)+' 分'}const days=Math.floor(min/1440);return days+' 天 '+(Math.floor(min%1440/60))+' 小时'}
+
+/* ============ 工具函数 ============ */
+function colorFor(id){let h=0;for(const ch of String(id))h=(h*31+ch.charCodeAt(0))>>>0;return COLORS[h%COLORS.length]}
+function colorName(hex){const i=COLORS.indexOf(hex);return i>=0?COLORS[i]:hex}
+function nextClass(){const now=new Date();let best=null,bestDiff=Infinity;for(let k=0;k<=7;k++){const day=new Date(now);day.setDate(now.getDate()+k);for(const c of state.courses){if(c.day!==((day.getDay()+6)%7+1))continue;const st=new Date(day);st.setHours(Math.floor(c.start/60),c.start%60,0,0);if(st>now){const diff=st-now;if(diff<bestDiff){bestDiff=diff;best={course:c,start:st}}}}}return best?{...best,diffMin:bestDiff/60000}:null}
+function nextExam(){const now=new Date();let best=null,bestDiff=Infinity;for(const e of state.exams){const dt=new Date(e.date+'T'+e.time);if(dt>now){const diff=dt-now;if(diff<bestDiff){bestDiff=diff;best={exam:e,dt}}}}return best?{...best,diffMin:bestDiff/60000}:null}
+function todayCourses(){const dow=(new Date().getDay()+6)%7+1;return state.courses.filter(c=>c.day===dow).sort((a,b)=>a.start-b.start)}
+
+/* ============ 渲染：概览 ============ */
+function renderSummary(){
+  const nc=nextClass(),ne=nextExam(),tc=todayCourses();
+  let cHtml='<div class="card"><h3>⏰ 下一节课</h3>';
+  if(nc){cHtml+='<div class="pill">'+fmtDur(nc.diffMin)+'</div><div class="big" style="color:'+nc.course.color+'">'+esc(nc.course.name)+'</div><div class="row">'+DAYS[nc.course.day-1]+' '+minToHM(nc.course.start)+' – '+minToHM(nc.course.end)+(nc.course.loc?' · '+esc(nc.course.loc):'')+'</div>'}
+  else cHtml+='<div style="color:#9aa1b2">本周没有更多课程啦 🎉</div>';
+  cHtml+='</div>';
+  let eHtml='<div class="card"><h3>🎯 下一场考试</h3>';
+  if(ne){eHtml+='<div class="pill warn">'+fmtDur(ne.diffMin)+'</div><div class="big">'+esc(ne.exam.name)+'</div><div class="row">'+fmtCN(ne.dt)+' '+ne.exam.time+(ne.exam.loc?' · '+esc(ne.exam.loc):'')+'</div>'}
+  else eHtml+='<div style="color:#9aa1b2">暂无考试安排 ✅</div>';
+  eHtml+='</div>';
+  let tHtml='<div class="card"><h3>📖 今日 '+tc.length+' 节课</h3>';
+  if(tc.length){for(const c of tc){tHtml+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="width:9px;height:9px;border-radius:50%;background:'+c.color+';flex:none"></span><b style="flex:1;font-size:.9rem">'+esc(c.name)+'</b><span class="row" style="margin:0">'+minToHM(c.start)+'</span></div>'}}
+  else tHtml+='<div style="color:#9aa1b2">今天没课，好好休息～</div>';
+  tHtml+='</div>';
+  document.getElementById('summary').innerHTML=cHtml+eHtml+tHtml;
+}
+
+/* ============ 渲染：周课表 ============ */
+function renderTimetable(){
+  const mon=mondayOf(new Date()),now=new Date(),dow=(now.getDay()+6)%7;
+  const head=document.getElementById('tblHead');let hh='<div></div>';
+  for(let i=0;i<7;i++){const d=addDays(mon,i);const isT=i===dow;hh+='<div class="'+(isT?'today-h':'')+'">'+DAYS[i]+'<br>'+d.getMonth()+1+'/'+d.getDate()+'</div>'}
+  head.innerHTML=hh;
+  const body=document.getElementById('gridBody');let g='<div class="gutter">';
+  for(let h=8;h<=22;h++)g+='<span style="top:'+((h-8)*60+30)+'px">'+pad(h)+':00</span>';
+  g+='</div>';
+  for(let i=0;i<7;i++){
+    g+='<div class="day-col'+(i===dow?' today':'')+'" data-day="'+(i+1)+'" title="点击空白处添加课程">';
+    for(const c of state.courses.filter(x=>x.day===i+1)){
+      const top=(c.start-480)*60+2,height=(c.end-c.start)*60-4;
+      g+='<div class="course" data-cid="'+c.id+'" style="top:'+top+'px;height:'+Math.max(height,22)+'px;background:linear-gradient(135deg,'+c.color+','+c.color+'cc)">'
+        +'<b>'+esc(c.name)+'</b><div class="meta">'+minToHM(c.start)+'-'+minToHM(c.end)+(c.loc?' · '+esc(c.loc):'')+'</div></div>';
+    }
+    if(i===dow){const nm=now.getHours()*60+now.getMinutes();if(nm>=480&&nm<=1320)g+='<div class="now-line" style="top:'+((nm-480)*60)+'px"></div>'}
+    g+='</div>';
+  }
+  body.innerHTML=g;
+}
+
+/* ============ 渲染：考试列表 ============ */
+function renderExams(){
+  const now=new Date(),el=document.getElementById('examList');
+  const list=state.exams.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(!list.length){el.innerHTML='<div class="empty-tip">还没有考试安排，点击右上角「＋ 添加考试」录入～</div>';return}
+  let html='';
+  for(const e of list){
+    const dt=new Date(e.date+'T'+e.time);const diff=(dt-now)/60000;let pill;
+    if(diff<0)pill='<span class="pill gray">已结束</span>';
+    else if(diff<24*60)pill='<span class="pill warn">今天 · '+fmtDur(diff)+'</span>';
+    else pill='<span class="pill">'+fmtDur(diff)+'</span>';
+    const col=COLORS[(e.id?[...String(e.id)].reduce((h,ch)=>(h*31+ch.charCodeAt(0))>>>0,0):0)%COLORS.length];
+    html+='<div class="exam-item"><span class="dot" style="background:'+col+'"></span>'
+      +'<span class="name">'+esc(e.name)+'</span>'
+      +'<span class="when">📅 '+fmtCN(dt)+' '+e.time+(e.loc?' · 📍 '+esc(e.loc):'')+'</span>'+pill
+      +'<button class="btn danger del" data-eid="'+e.id+'" style="padding:4px 9px">删除</button></div>';
+  }
+  el.innerHTML=html;
+}
+
+function renderAll(){const n=state.courses.length,m=state.exams.length;document.getElementById('status').textContent=n+' 门课程 · '+m+' 场考试';renderSummary();renderTimetable();renderExams();syncFooter()}
+
+/* ============ 设置区 ============ */
+function syncFooter(){const s=state.settings;document.getElementById('notifyOn').checked=!!s.notify;document.getElementById('courseLead').value=s.courseLead;document.getElementById('examLead').value=s.examLead}
+document.getElementById('notifyOn').addEventListener('change',function(){state.settings.notify=this.checked;save();if(this.checked&&'Notification'in window&&Notification.permission==='default')Notification.requestPermission()});
+document.getElementById('courseLead').addEventListener('change',function(){state.settings.courseLead=Math.max(0,+this.value||0);save()});
+document.getElementById('examLead').addEventListener('change',function(){state.settings.examLead=Math.max(0,+this.value||0);save()});
+
+/* ============ Toast ============ */
+function toast(msg){const w=document.getElementById('toasts');const t=document.createElement('div');t.className='toast';t.textContent=msg;w.appendChild(t);setTimeout(()=>t.remove(),5000)}
+
+/* ============ 系统通知 ============ */
+function notify(title,body){toast(title+(body?'：'+body:''));if(state.settings.notify&&'Notification'in window&&Notification.permission==='granted'){try{new Notification(title,{body,icon:''})}catch(e){}}}
+function checkReminders(){
+  const now=new Date(),leadC=state.settings.courseLead||0,leadE=state.settings.examLead||0;
+  for(const c of state.courses){const st=new Date(now);st.setHours(Math.floor(c.start/60),c.start%60,0,0);const sameDay=st.getDate()===now.getDate()&&st.getMonth()===now.getMonth();if(!sameDay)continue;const diff=st-now;if(diff>0&&diff<=leadC*60000){const k=c.id+'-'+now.toDateString();if(!notified.has(k)){notified.add(k);notifiedSave(notified);notify('📚 准备上课',c.name+' '+minToHM(c.start)+(c.loc?' @'+c.loc:''))}}}
+  for(const e of state.exams){const dt=new Date(e.date+'T'+e.time);const diff=dt-now;if(diff>0&&diff<=leadE*60000){const k=e.id+'-'+now.toDateString();if(!notified.has(k)){notified.add(k);notifiedSave(notified);notify('📝 考试提醒',e.name+' '+fmtCN(dt)+' '+e.time+(e.loc?' @'+e.loc:''))}}}
+}
+
+/* ============ 课程弹窗 ============ */
+let editingCourse=null;
+function openCourse(c){
+  const daySel=document.getElementById('cDay');daySel.innerHTML=DAYS.map((d,i)=>'<option value="'+(i+1)+'"'+(c&&c.day===i+1?' selected':'')+'>'+d+'</option>').join('');
+  const colSel=document.getElementById('cColor');colSel.innerHTML=COLORS.map((x,i)=>'<option value="'+x+'"'+(c&&c.color===x?' selected':'')+'>颜色 '+(i+1)+'</option>').join('');
+  document.getElementById('cName').value=c?c.name:'';
+  document.getElementById('cStart').value=c?minToHM(c.start):'08:00';
+  document.getElementById('cEnd').value=c?minToHM(c.end):'09:40';
+  document.getElementById('cLoc').value=c?(c.loc||''):'';
+  document.getElementById('cTeacher').value=c?(c.teacher||''):'';
+  document.getElementById('courseModalTitle').textContent=c?'编辑课程':'添加课程';
+  document.getElementById('courseDel').style.display=c?'':'none';
+  editingCourse=c||null;document.getElementById('ovCourse').classList.add('show');
+}
+function saveCourse(){
+  const name=document.getElementById('cName').value.trim();const day=+document.getElementById('cDay').value;
+  const st=toMin(document.getElementById('cStart').value),en=toMin(document.getElementById('cEnd').value);
+  if(!name){toast('请填写课程名称');return}if(en<=st){toast('结束时间需晚于开始时间');return}
+  if(editingCourse){Object.assign(editingCourse,{name,day,start:st,end:en,loc:document.getElementById('cLoc').value.trim(),teacher:document.getElementById('cTeacher').value.trim(),color:colorName(document.getElementById('cColor').value)})}
+  else{state.courses.push({id:uid(),name,day,start:st,end:en,loc:document.getElementById('cLoc').value.trim(),teacher:document.getElementById('cTeacher').value.trim(),color:colorName(document.getElementById('cColor').value)})}
+  save();document.getElementById('ovCourse').classList.remove('show');renderAll();
+}
+document.getElementById('btnAddCourse').addEventListener('click',()=>openCourse(null));
+document.getElementById('courseSave').addEventListener('click',saveCourse);
+document.getElementById('courseCancel').addEventListener('click',()=>document.getElementById('ovCourse').classList.remove('show'));
+document.getElementById('courseDel').addEventListener('click',function(){if(!editingCourse)return;if(confirm('确定删除这门课吗？')){state.courses=state.courses.filter(x=>x.id!==editingCourse.id);save();document.getElementById('ovCourse').classList.remove('show');renderAll()}});
+document.addEventListener('click',function(ev){
+  const cb=ev.target.closest('.course');if(cb){openCourse(state.courses.find(x=>x.id===cb.dataset.cid));return}
+  const db=ev.target.closest('.del');if(db){const id=db.dataset.eid;if(confirm('确定删除这条考试记录吗？')){state.exams=state.exams.filter(x=>x.id!==id);save();renderAll()}return}
+  const col=ev.target.closest('.day-col');if(col&&ev.target===col){const d=+col.dataset.day;openCourse(Object.assign({day:d},{day:d}));return}
+});
+/* 点击空白列：默认当天的开始时间是下一整点 */
+document.getElementById('gridBody').addEventListener('click',function(ev){const col=ev.target.closest('.day-col');if(col&&ev.target.classList.contains('day-col')){const d=+col.dataset.day;const h=new Date().getHours()+1;openCourse({day:d,start:Math.max(480,(h)*60),end:Math.max(540,(h)*60+100)})}});
+
+/* ============ 考试弹窗 ============ */
+let editingExam=null;
+function openExam(e){
+  const def=e||{};
+  document.getElementById('eName').value=def.name||'';
+  document.getElementById('eDate').value=def.date||new Date().toISOString().slice(0,10);
+  document.getElementById('eTime').value=def.time||'09:00';
+  document.getElementById('eLoc').value=def.loc||'';
+  document.getElementById('examModalTitle').textContent=e?'编辑考试':'添加考试';
+  document.getElementById('examDel').style.display=e?'':'none';
+  editingExam=e||null;document.getElementById('ovExam').classList.add('show');
+}
+function saveExam(){
+  const name=document.getElementById('eName').value.trim();const date=document.getElementById('eDate').value;const time=document.getElementById('eTime').value;
+  if(!name){toast('请填写考试科目');return}if(!date){toast('请选择日期');return}
+  if(editingExam){Object.assign(editingExam,{name,date,time,loc:document.getElementById('eLoc').value.trim()})}
+  else{state.exams.push({id:uid(),name,date,time,loc:document.getElementById('eLoc').value.trim()})}
+  save();document.getElementById('ovExam').classList.remove('show');renderAll();
+}
+document.getElementById('btnAddExam').addEventListener('click',()=>openExam(null));
+document.getElementById('examSave').addEventListener('click',saveExam);
+document.getElementById('examCancel').addEventListener('click',()=>document.getElementById('ovExam').classList.remove('show'));
+document.getElementById('examDel').addEventListener('click',function(){if(!editingExam)return;if(confirm('确定删除这场考试吗？')){state.exams=state.exams.filter(x=>x.id!==editingExam.id);save();document.getElementById('ovExam').classList.remove('show');renderAll()}});
+
+/* ============ 备份 & 示例 ============ */
+document.getElementById('btnExport').addEventListener('click',function(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='课表备份-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);toast('已导出备份')});
+document.getElementById('btnImport').addEventListener('click',()=>document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change',function(){const f=this.files[0];if(!f)return;const r=new FileReader();r.onload=function(){try{const d=JSON.parse(r.result);if(!d||!Array.isArray(d.courses)||!Array.isArray(d.exams))throw 0;state={courses:d.courses,exams:d.exams,settings:Object.assign({courseLead:10,examLead:60,notify:true},d.settings)};save();renderAll();toast('导入成功')}catch(e){toast('文件格式不正确')}};r.readAsText(f);this.value=''});
+document.getElementById('btnClear').addEventListener('click',function(){if(confirm('确定清空所有课程和考试数据吗？（建议先导出备份）')){state={courses:[],exams:[],settings:state.settings};save();renderAll();toast('已清空')}});
+
+/* ============ 示例数据 ============ */
+function sampleData(){
+  const mon=mondayOf(new Date());
+  const mk=(name,day,sh,eh,loc,teacher)=>({id:uid(),name,day,start:sh*60, end:eh*60,loc,teacher,color:colorFor(name)});
+  const courses=[
+    mk('高等数学',1,8,10,'教1-101','王老师'),mk('大学英语',1,10,12,'教2-302','李老师'),
+    mk('程序设计基础',2,8,10,'机房A302','张老师'),mk('线性代数',2,14,16,'教3-208','刘老师'),
+    mk('大学物理',3,10,12,'教1-205','赵老师'),mk('数据结构',3,14,16,'教4-110','陈老师'),
+    mk('形势与政策',4,16,18,'教2-101','辅导员'),mk('体育',5,8,10,'操场','孙老师')
+  ];
+  const e1=addDays(mon,3),e2=addDays(mon,8),e3=addDays(mon,15);
+  const exams=[
+    {id:uid(),name:'高等数学 期中考试',date:e1.toISOString().slice(0,10),time:'09:00',loc:'教1-101'},
+    {id:uid(),name:'大学英语 四级模拟',date:e2.toISOString().slice(0,10),time:'14:30',loc:'教2-302'},
+    {id:uid(),name:'数据结构 随堂测验',date:e3.toISOString().slice(0,10),time:'10:00',loc:'教4-110'}
+  ];
+  return {courses,exams};
+}
+document.getElementById('btnSample').addEventListener('click',function(){if(confirm('载入示例会追加一套演示课程/考试（不会清空现有数据），确定吗？')){const s=sampleData();state.courses=state.courses.concat(s.courses);state.exams=state.exams.concat(s.exams);save();renderAll();toast('已载入示例数据，可点「清空」后录入自己的课表')}});
+
+/* ============ 启动 ============ */
+(function init(){
+  if(!state.courses.length&&!state.exams.length){state=sampleData();save();setTimeout(()=>toast('已载入示例数据 👉 点「清空」即可录入你自己的课表'),600)}
+  renderAll();checkReminders();setInterval(checkReminders,20000);
+})();
+</script>
+</body>
+</html>
