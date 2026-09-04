@@ -324,18 +324,18 @@ function renderExams(){
 function renderAll(){const n=state.courses.length,m=state.exams.length;document.getElementById('status').textContent=n+' 门课程 · '+m+' 场考试';renderSummary();renderTimetable();renderExams();syncFooter()}
 
 /* ============ 设置区 ============ */
-function syncFooter(){const s=state.settings;document.getElementById('notifyOn').checked=!!s.notify;document.getElementById('courseLead').value=s.courseLead;document.getElementById('examLead').value=s.examLead}
-document.getElementById('notifyOn').addEventListener('change',function(){state.settings.notify=this.checked;save();if(this.checked&&'Notification'in window&&Notification.permission==='default')Notification.requestPermission()});
-document.getElementById('courseLead').addEventListener('change',function(){state.settings.courseLead=Math.max(0,+this.value||0);save()});
-document.getElementById('examLead').addEventListener('change',function(){state.settings.examLead=Math.max(0,+this.value||0);save()});
+function syncFooter(){const s=state.settings||{};document.getElementById('notifyOn').checked=!!s.notify;document.getElementById('courseLead').value=s.courseLead;document.getElementById('examLead').value=s.examLead}
+document.getElementById('notifyOn').addEventListener('change',function(){(state.settings=state.settings||{}).notify=this.checked;save();if(this.checked&&'Notification'in window&&Notification.permission==='default')Notification.requestPermission()});
+document.getElementById('courseLead').addEventListener('change',function(){(state.settings=state.settings||{}).courseLead=Math.max(0,+this.value||0);save()});
+document.getElementById('examLead').addEventListener('change',function(){(state.settings=state.settings||{}).examLead=Math.max(0,+this.value||0);save()});
 
 /* ============ Toast ============ */
 function toast(msg){const w=document.getElementById('toasts');const t=document.createElement('div');t.className='toast';t.textContent=msg;w.appendChild(t);setTimeout(()=>t.remove(),5000)}
 
 /* ============ 系统通知 ============ */
-function notify(title,body){toast(title+(body?'：'+body:''));if(state.settings.notify&&'Notification'in window&&Notification.permission==='granted'){try{new Notification(title,{body,icon:''})}catch(e){}}}
+function notify(title,body){toast(title+(body?'：'+body:''));if((state.settings||{}).notify&&'Notification'in window&&Notification.permission==='granted'){try{new Notification(title,{body,icon:''})}catch(e){}}}
 function checkReminders(){
-  const now=new Date(),leadC=state.settings.courseLead||0,leadE=state.settings.examLead||0;
+  const now=new Date(),st2=state.settings||{},leadC=st2.courseLead||0,leadE=st2.examLead||0;
   for(const c of state.courses){const st=new Date(now);st.setHours(Math.floor(c.start/60),c.start%60,0,0);const sameDay=st.getDate()===now.getDate()&&st.getMonth()===now.getMonth();if(!sameDay)continue;const diff=st-now;if(diff>0&&diff<=leadC*60000){const k=c.id+'-'+now.toDateString();if(!notified.has(k)){notified.add(k);notifiedSave(notified);notify('📚 准备上课',c.name+' '+minToHM(c.start)+(c.loc?' @'+c.loc:''))}}}
   for(const e of state.exams){const dt=new Date(e.date+'T'+e.time);const diff=dt-now;if(diff>0&&diff<=leadE*60000){const k=e.id+'-'+now.toDateString();if(!notified.has(k)){notified.add(k);notifiedSave(notified);notify('📝 考试提醒',e.name+' '+fmtCN(dt)+' '+e.time+(e.loc?' @'+e.loc:''))}}}
 }
@@ -426,7 +426,7 @@ document.getElementById('btnSample').addEventListener('click',function(){if(conf
 
 /* ============ 启动 ============ */
 (function init(){
-  if(!state.courses.length&&!state.exams.length){state=sampleData();save();setTimeout(()=>toast('已载入示例数据 👉 点「清空」即可录入你自己的课表'),600)}
+  if(!state.courses.length&&!state.exams.length){state=sampleData();state.settings=state.settings||{courseLead:10,examLead:60,notify:true};save();setTimeout(()=>toast('已载入示例数据 👉 点「清空」即可录入你自己的课表'),600)}
   renderAll();checkReminders();setInterval(checkReminders,20000);
 })();
 /* ================= 图片自动排课 ================= */
@@ -627,6 +627,7 @@ document.getElementById('btnImportImg').addEventListener('click',function(){
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(e){console.warn('SW',e)})})}</script>
 </body>
 </html>
+
 
 
 
