@@ -1,0 +1,1 @@
+﻿{"name":"课表 & 考试提醒","short_name":"课表提醒","description":"大学生课表与考试提醒工具","lang":"zh-CN","start_url":"./","scope":"./","display":"standalone","background_color":"#eef1f8","theme_color":"#6366f1","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}
