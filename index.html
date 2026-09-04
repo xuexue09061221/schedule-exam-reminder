@@ -482,7 +482,7 @@ async function runImageOCR(cv){
   setOcr('准备 OCR 引擎…',5);
   try{await loadOCR()}catch(e){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">'+esc(e.message)+'</span>';return}
   const grid=detectGrid(cv);
-  if(!grid){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">未识别到表格线。请上传横平竖直的课表<b>截图</b>（避免拍照歪斜/模糊）。</span>';return}
+  if(!grid){await smartParse(cv);return}
   const {xs,ys}=grid;
   imgS.rowH=ys.length-1;
   setOcr('下载中文识别包(首次约1.7MB)…',15);
@@ -623,10 +623,88 @@ document.getElementById('btnImportImg').addEventListener('click',function(){
   toast(n>0?('已导入 '+n+' 门课程'+(skip?('，跳过 '+skip+' 条未填完整'):'')):'没有符合条件的课程（请检查星期/时间是否填好）');
   if(n)document.getElementById('ovImg').classList.remove('show');
 });
-</script>
+/* ============ 智能模式: 无表格线版式解析 ============ */
+const OCR_LANG='https://cdn.jsdelivr.net/npm/@tesseract.js-data/chi_sim/4.0.0_best_int';
+/*__PARSER_START__*/
+function sDayOf(t){const m=String(t).match(/[一二三四五六日]/);if(!m)return null;return '一二三四五六日'.indexOf(m[0])+1}
+function sToMin(x){const a=String(x).split(':');return (+a[0])*60+(+a[1])}
+function sIsLoc(l){return l.indexOf('@')>=0||(/(阅道|文山|东区|球场|操场|体育|楼|馆|教|实验|机房|篮球|田径|足球)/.test(l)&&/\d/.test(l))||/^\d+$/.test(l)}
+function parseLayoutWords(words,W,H){
+  const ws=words.filter(w=>w.y1>H*0.05&&w.y0<H*0.93);
+  const hd=ws.filter(w=>/^(周|星期)?[一二三四五六日]$/.test(w.text));
+  const cols=[];
+  for(const w of hd){const d=sDayOf(w.text);if(d)cols.push({d,cx:(w.x0+w.x1)/2})}
+  cols.sort((a,b)=>a.cx-b.cx);
+  const seen=new Set();const cols2=[];
+  for(const c of cols){if(seen.has(c.d))continue;seen.add(c.d);cols2.push(c)}
+  if(cols2.length<2)return [];
+  const gap=cols2[1].cx-cols2[0].cx;
+  const half=gap*0.66;
+  const headerY=Math.min(...hd.map(w=>w.y0));
+  const times=ws.filter(w=>/^\d{1,2}:\d{2}$/.test(w.text)&&(w.x0+w.x1)/2<cols2[0].cx-half*0.5).sort((a,b)=>a.y0-b.y0);
+  const slots=[];
+  for(let i=0;i<times.length;i+=2){const s=times[i],e=times[i+1];if(!s)continue;const sy=(s.y0+s.y1)/2,ey=e?(e.y0+e.y1)/2:sy;slots.push({s:sToMin(s.text),e:e?sToMin(e.text):sToMin(s.text)+95,c:(sy+ey)/2})}
+  const cutY=headerY+W*0.10;
+  const data=ws.filter(w=>{
+    const cy=(w.y0+w.y1)/2;
+    if(cy<cutY)return false;
+    if(/^\d{1,2}\/\d{1,2}$/.test(w.text))return false;
+    const cx=(w.x0+w.x1)/2;
+    return cx>=cols2[0].cx-half;
+  });
+  const out=[];
+  for(const c of cols2){
+    const cws=data.filter(w=>Math.abs((w.x0+w.x1)/2-c.cx)<half).sort((a,b)=>a.y0-b.y0);
+    let group=[],prevBot=null;
+    const push=()=>{if(!group.length)return;
+      group.sort((a,b)=>a.y0-b.y0);
+      const lines=group.map(g=>g.text);
+      const top=group[0].y0,bot=group[group.length-1].y1;
+      const center=(top+bot)/2;
+      const nl=lines.filter(l=>!sIsLoc(l)&&!/^@?$/.test(l)&&!/^(周|星期)?[一二三四五六日]$/.test(l));
+      if(!nl.length)return;
+      const name=nl[0].replace(/[。．.、,，;；:：\s]+$/,'').slice(0,40);
+      const ll=lines.find(sIsLoc);
+      const loc=ll?ll.replace(/^@/,''):'';
+      let slot=null,bd=1e9;
+      for(const s of slots){const dd=Math.abs(s.c-center);if(dd<bd){bd=dd;slot=s}}
+      if(slot&&name)out.push({day:c.d,name,loc,s:slot.s,e:slot.e});
+      group=[];
+    };
+    for(const w of cws){
+      if(prevBot!=null&&w.y0-prevBot>W*0.10)push();
+      group.push(w);
+      prevBot=prevBot==null?w.y1:Math.max(prevBot,w.y1);
+    }
+    push();
+  }
+  return out.filter(e=>!/^(首页|课表|发现|我的|一起来学课程表)$/.test(e.name));
+}
+/*__PARSER_END__*/
+function imgFail(msg){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">'+esc(msg)+'</span>'}
+async function smartParse(cv){
+  imgS.canvas=cv;
+  document.getElementById('imgResult').innerHTML='<span class="status">未检测到表格线，已启动<b>智能无表格线模式</b>…</span>';
+  setOcr('整图识别中（首次较慢，请稍候）…',30);
+  try{await loadOCR()}catch(e){imgFail('OCR 引擎加载失败：'+e.message);return}
+  let worker;
+  try{worker=await Tesseract.createWorker('chi_sim',1,{logger:()=>{},langPath:OCR_LANG})}
+  catch(e){imgFail('识别引擎启动失败：'+esc(e.message));return}
+  try{
+    const r=await worker.recognize(cv);
+    const words=(r.data.words||[]).map(w=>({text:w.text,x0:w.bbox.x0,y0:w.bbox.y0,x1:w.bbox.x1,y1:w.bbox.y1}));
+    const entries=parseLayoutWords(words,cv.width,cv.height);
+    imgS.entries=entries;
+    if(entries.length){renderReview()}
+    else{imgFail('未识别到课程内容。请确认图片清晰、包含「周一~周五」表头；或改用手动录入。')}
+  }catch(e){imgFail('识别出错：'+esc(e.message))}
+  finally{try{worker.terminate()}catch(e){}}
+}</script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(e){console.warn('SW',e)})})}</script>
 </body>
 </html>
+
+
 
 
 
