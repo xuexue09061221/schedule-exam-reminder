@@ -90,6 +90,19 @@
     .grid-body,.tbl-head{overflow-x:auto}
     .day-col{min-width:120px}
   }
+  /* ===== 图片排课 ===== */
+  .imgzone{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;background:#fafbff;margin:8px 0}
+  .imgzone .btn{margin:0 6px}
+  .imgtip{font-size:.8rem;color:var(--sub);background:#f6f7ff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:6px;line-height:1.6}
+  #imgCanvas{max-width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px;background:#fff}
+  .ocrbar{display:flex;align-items:center;gap:10px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 12px;margin-top:10px;font-size:.85rem}
+  .ocrbar progress{flex:1}
+  .rev-row{display:grid;grid-template-columns:auto 92px 1.4fr 86px 86px 1fr auto;gap:6px;align-items:center;padding:6px 2px;border-bottom:1px dashed var(--line);font-size:.83rem}
+  .rev-row input,.rev-row select{padding:6px 7px;border:1px solid var(--line);border-radius:8px;font-size:.83rem;background:#fbfcfe;min-width:0;width:100%}
+  .rev-head{display:grid;grid-template-columns:auto 92px 1.4fr 86px 86px 1fr auto;gap:6px;padding:4px 2px;color:var(--sub);font-size:.72rem;border-bottom:1px solid var(--line);font-weight:600}
+  .rev-miss{background:#fff7ed}
+  #imgReview{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-top:6px}
+  .periodbox{width:100%;height:76px;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:.8rem;background:#fbfcfe;font-family:inherit}
 </style>
 </head>
 <body>
@@ -101,6 +114,7 @@
   <div class="status" id="status"></div>
   <div class="actions">
     <button class="btn" id="btnSample" title="载入一套示例课表，方便体验">✨ 载入示例</button>
+    <button class="btn primary" id="btnImg">📷 图片排课</button>
     <button class="btn" id="btnExport">⬇ 导出</button>
     <button class="btn" id="btnImport">⬆ 导入</button>
     <button class="btn danger" id="btnClear">🗑 清空</button>
@@ -175,6 +189,44 @@
   </div>
 </div>
 
+<div class="overlay" id="ovImg">
+  <div class="modal" style="max-width:760px">
+    <h2>📷 图片自动排课</h2>
+    <div class="imgtip">上传你的<b>课表截图</b>（教务系统 / 课表 App 的横平竖直表格效果最好）。系统会自动识别网格和文字，生成可校对的课表，确认后一键导入。首次使用需下载中文识别包（约 1.7MB），请耐心等待。</div>
+    <div class="imgzone" id="imgZone">
+      <input type="file" id="imgFile" accept="image/*" style="display:none">
+      <button class="btn primary" id="btnPickImg">📁 选择课表图片</button>
+      <span class="status">支持 JPG / PNG 截图</span>
+    </div>
+    <canvas id="imgCanvas" style="display:none"></canvas>
+    <div class="ocrbar" id="ocrBar" style="display:none">
+      <span id="ocrText">准备中…</span>
+      <progress id="ocrProg" value="0" max="100"></progress>
+      <button class="btn" id="btnAbortOcr">取消</button>
+    </div>
+    <div style="margin-top:10px" id="imgResult"></div>
+    <div id="imgReviewWrap" style="display:none">
+      <div class="sec-head" style="margin-top:10px">
+        <h2>📋 校对识别结果（可改）</h2>
+        <button class="btn primary" id="btnImportImg">✅ 导入选中课表</button>
+      </div>
+      <div class="rev-head"><span></span><span>星期</span><span>课程名称</span><span>开始</span><span>结束</span><span>地点</span><span></span></div>
+      <div id="imgReview"></div>
+      <details style="margin-top:8px"><summary style="cursor:pointer;font-size:.8rem;color:var(--sub)">⚙️ 节次↔时间对照表（按需修改，每行：节次 开始-结束）</summary>
+      <textarea class="periodbox" id="periodTxt" style="margin-top:6px">1 08:00-09:40
+2 10:00-11:40
+3 14:00-15:40
+4 16:00-17:40
+5 19:00-20:40
+6 08:00-09:40
+7 10:00-11:40
+8 14:00-15:40
+9 16:00-17:40
+10 19:00-20:40</textarea></details>
+    </div>
+    <div class="modal-btns"><button class="btn" id="imgCancel">关闭</button></div>
+  </div>
+</div>
 <div class="toast-wrap" id="toasts"></div>
 
 <script>
@@ -377,8 +429,204 @@ document.getElementById('btnSample').addEventListener('click',function(){if(conf
   if(!state.courses.length&&!state.exams.length){state=sampleData();save();setTimeout(()=>toast('已载入示例数据 👉 点「清空」即可录入你自己的课表'),600)}
   renderAll();checkReminders();setInterval(checkReminders,20000);
 })();
+/* ================= 图片自动排课 ================= */
+const imgS={worker:null,abort:false,cells:[],entries:[],rowH:0,canvas:null};
+function dayOf(t){const m=String(t||'').match(/[一二三四五六日]/);if(!m)return null;const s='一二三四五六日';return s.indexOf(m[0])+1}
+function cleanCellText(t){return String(t||'').replace(/\s+/g,' ').trim()}
+function isWeekRange(t){return /^\d{1,2}\s*[-－—~至到]?\s*\d{0,2}\s*周\s*$/.test(String(t||'').trim())}
+function parsePeriodMap(txt){
+  const map={};
+  String(txt||'').split(/\r?\n/).forEach(ln=>{
+    const m=ln.trim().match(/^(\d{1,2})\s+(\d{1,2}):(\d{2})\s*[-－—~至到]\s*(\d{1,2}):(\d{2})$/);
+    if(m)map[+m[1]]=[+m[2]*60+(+m[3]),+m[4]*60+(+m[5])];
+  });
+  return map;
+}
+function parseTimes(text,pmap){
+  const m1=String(text||'').match(/(\d{1,2})[:：](\d{2})\s*[-－—~至到]\s*(\d{1,2})[:：](\d{2})/);
+  if(m1)return {s:(+m1[1])*60+(+m1[2]),e:(+m1[3])*60+(+m1[4])};
+  const m2=String(text||'').match(/第?\s*(\d{1,2})\s*[-－—~至到]?\s*(\d{0,2})\s*节/);
+  if(m2){const p1=+m2[1],p2=m2[2]?+m2[2]:p1;const a=pmap[p1],b=pmap[p2];if(a)return {s:a[0],e:b?b[1]:a[1]}}
+  return null;
+}
+function guessLoc(lines){
+  const locRe=/(教|楼|馆|室|区|座|阶|机房|操场|实验|报告厅)[A-Za-z0-9-－—]*/;
+  for(const ln of lines){if(ln&&locRe.test(ln)&&/\d/.test(ln))return ln}
+  for(const ln of lines){if(ln&&/\d/.test(ln)&&!isWeekRange(ln)&&!/^(\d{1,2})[:：]/.test(ln))return ln}
+  return '';
+}
+function loadOCR(){return new Promise((res,rej)=>{if(window.Tesseract)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('OCR 引擎下载失败，请检查网络'));document.head.appendChild(s)})}
+function setOcr(t,p){const bar=document.getElementById('ocrBar');bar.style.display='flex';document.getElementById('ocrText').textContent=t;const pr=document.getElementById('ocrProg');pr.value=p||0}
+function hideOcr(){document.getElementById('ocrBar').style.display='none'}
+function openImg(){imgS.abort=false;document.getElementById('ovImg').classList.add('show');document.getElementById('imgResult').innerHTML='';document.getElementById('imgReviewWrap').style.display='none';document.getElementById('imgCanvas').style.display='none'}
+document.getElementById('btnImg').addEventListener('click',openImg);
+document.getElementById('imgCancel').addEventListener('click',()=>{imgS.abort=true;document.getElementById('ovImg').classList.remove('show')});
+document.getElementById('btnPickImg').addEventListener('click',()=>document.getElementById('imgFile').click());
+document.getElementById('btnAbortOcr').addEventListener('click',()=>{imgS.abort=true});
+document.getElementById('imgFile').addEventListener('change',async function(){
+  const file=this.files[0];this.value='';if(!file)return;
+  if(!/^image\//.test(file.type)){toast('请选择图片文件');return}
+  document.getElementById('imgResult').innerHTML='<span class="status">正在读取图片…</span>';
+  const url=URL.createObjectURL(file);
+  const im=new Image();
+  await new Promise((res,rej)=>{im.onload=res;im.onerror=()=>rej(new Error('图片读取失败'));im.src=url});
+  const scale=Math.min(1,1600/im.naturalWidth,1600/im.naturalHeight);
+  const cv=document.getElementById('imgCanvas');cv.width=Math.round(im.naturalWidth*scale);cv.height=Math.round(im.naturalHeight*scale);
+  cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
+  cv.style.display='block';URL.revokeObjectURL(url);
+  await runImageOCR(cv);
+});
+async function runImageOCR(cv){
+  imgS.canvas=cv;imgS.abort=false;
+  document.getElementById('imgResult').innerHTML='';
+  setOcr('准备 OCR 引擎…',5);
+  try{await loadOCR()}catch(e){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">'+esc(e.message)+'</span>';return}
+  const grid=detectGrid(cv);
+  if(!grid){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">未识别到表格线。请上传横平竖直的课表<b>截图</b>（避免拍照歪斜/模糊）。</span>';return}
+  const {xs,ys}=grid;
+  imgS.rowH=ys.length-1;
+  setOcr('下载中文识别包(首次约1.7MB)…',15);
+  let worker;
+  try{
+    worker=await Tesseract.createWorker('chi_sim',1,{logger:()=>{},langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/chi_sim/4.0.0_best_int'});
+    imgS.worker=worker;
+  }catch(e){hideOcr();document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">识别引擎启动失败：'+esc(e.message)+'</span>';return}
+  const ctx2=cv.getContext('2d');
+  const texts=[];
+  const total=(xs.length-1)*(ys.length-1);
+  let done=0,skipped=0;
+  for(let r=0;r<ys.length-1;r++){
+    texts.push([]);
+    for(let col=0;col<xs.length-1;col++){
+      if(imgS.abort){try{worker.terminate()}catch(e){}imgS.worker=null;hideOcr();document.getElementById('imgResult').innerHTML='<span class="status">已取消识别</span>';return}
+      const x0=Math.max(0,Math.round(xs[col])),y0=Math.max(0,Math.round(ys[r])),x1=Math.min(cv.width,Math.round(xs[col+1])),y1=Math.min(cv.height,Math.round(ys[r+1]));
+      const w=x1-x0,h=y1-y0;
+      let dark=0,tot=0;
+      if(w>2&&h>2){const d=ctx2.getImageData(x0,y0,w,h).data;for(let i=0;i<d.length;i+=4){tot++;if((d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11)<150)dark++}}
+      let cellTxt='';
+      if(dark/tot>0.004){
+        try{
+          setOcr('识别中 '+done+' / '+total,15+Math.round(done/total*70));
+          const crop=document.createElement('canvas');crop.width=w;crop.height=h;
+          crop.getContext('2d').drawImage(cv,x0,y0,w,h,0,0,w,h);
+          const rr=await worker.recognize(crop);
+          cellTxt=cleanCellText(rr.data.text);
+        }catch(e){cellTxt=''}
+      }
+      if(cellTxt)done++;else skipped++;
+      texts[r].push(cellTxt);
+    }
+  }
+  try{worker.terminate()}catch(e){}imgS.worker=null;
+  if(imgS.abort){hideOcr();return}
+  buildReview(texts,xs.length-1);
+}
+function detectGrid(cv){
+  const ctx2=cv.getContext('2d');const {width:W,height:H}=cv;
+  const d=ctx2.getImageData(0,0,W,H).data;
+  const lum=Array.from({length:W*H},(_,i)=>{const j=i*4;return (d[j]*0.3+d[j+1]*0.59+d[j+2]*0.11)});
+  function lines(horizontal){
+    const out=[];const len=horizontal?H:W,span=horizontal?W:H;
+    let run=false,start=0;
+    const arr=[];
+    for(let i=0;i<len;i++){
+      let cnt=0;
+      for(let j=0;j<span;j++){const idx=horizontal?i*W+j:j*W+i;if(lum[idx]<150)cnt++}
+      const thick=horizontal?(span>0?cnt/span:0):(span>0?cnt/span:0);
+      const on=thick>0.28;
+      if(on&&!run){run=true;start=i}
+      if((!on||i===len-1)&&run){
+        const end=i-(on?0:1);
+        if(end-start>=1){out.push(Math.round((start+end)/2))}
+        run=false;
+      }
+    }
+    return out;
+  }
+  const xs=lines(false),ys=lines(true);
+  if(xs.length<3||ys.length<3)return null;
+  /* 合并过近的线 */
+  function prune(a){const r=[];for(const v of a){if(r.length&&v-r[r.length-1]<5)continue;r.push(v)}return r}
+  const xs2=prune(xs),ys2=prune(ys);
+  if(xs2.length<3||ys2.length<3)return null;
+  return {xs:xs2,ys:ys2};
+}
+function buildReview(texts,nCols){
+  const pmap=parsePeriodMap(document.getElementById('periodTxt').value);
+  /* 找表头行：从上往下第一个包含星期字的行 */
+  let headerR=0;
+  outer:for(let r=0;r<texts.length;r++){
+    let has=false;
+    for(let c=0;c<nCols;c++){if(texts[r]&&dayOf(texts[r][c])){has=true}}
+    if(has){headerR=r;break outer}
+  }
+  const dayCols=[];
+  for(let c=0;c<nCols;c++){const d=texts[headerR]?dayOf(texts[headerR][c]):null;if(d)dayCols.push({c,d})}
+  dayCols.sort((a,b)=>a.c-b.c);
+  if(!dayCols.length){document.getElementById('imgResult').innerHTML='<span style="color:var(--danger)">未在表头识别到星期，请换更清晰的截图。</span>';return}
+  const firstDayCol=Math.min(...dayCols.map(x=>x.c));
+  const timeCol=firstDayCol>0?firstDayCol-1:-1;
+  const entries=[];
+  for(let r=headerR+1;r<texts.length;r++){
+    const timeText=timeCol>=0&&texts[r]&&texts[r][timeCol]?texts[r][timeCol]:'';
+    const tm=parseTimes(timeText,pmap);
+    for(const dc of dayCols){
+      const raw=texts[r]&&texts[r][dc.c]?texts[r][dc.c]:'';
+      if(!raw||isWeekRange(raw)||/^\d{1,2}$/.test(raw))continue;
+      const lines=String(raw).split(' ').map(s=>s.trim()).filter(Boolean);
+      const content=lines.filter(l=>!isWeekRange(l)&&!/^(周[一二三四五六日]|星期[一二三四五六日])$/.test(l));
+      if(!content.length)continue;
+      const name=content[0].slice(0,40);
+      if(name.length<1)continue;
+      entries.push({day:dc.d,name,loc:guessLoc(content),s:tm?tm.s:'',e:tm?tm.e:'',raw,checked:true});
+    }
+  }
+  imgS.entries=entries;
+  renderReview();
+}
+function renderReview(){
+  const wrap=document.getElementById('imgReviewWrap');wrap.style.display='block';
+  const box=document.getElementById('imgReview');
+  if(!imgS.entries.length){box.innerHTML='<div class="empty-tip">没有识别到课程内容，请换更清晰的截图后重试。</div>';document.getElementById('imgResult').innerHTML='';return}
+  document.getElementById('imgResult').innerHTML='<span class="status">共识别到 '+imgS.entries.length+' 条课程，请核对后导入。</span>';
+  box.innerHTML=imgS.entries.map((e,i)=>{
+    const opts='<option value="0">?周</option>'+DAYS.map((dd,j)=>'<option value="'+(j+1)+'"'+(e.day===j+1?' selected':'')+'>'+dd+'</option>').join('');
+    return '<div class="rev-row'+(e.day&&e.s!==''&&e.e!==''?'':' rev-miss')+'">'
+      +'<input type="checkbox" class="rchk" data-i="'+i+'"'+(e.checked?' checked':'')+'>'
+      +'<select class="rday" data-i="'+i+'">'+opts+'</select>'
+      +'<input class="rname" data-i="'+i+'" value="'+esc(e.name)+'">'
+      +'<input type="time" class="rst" data-i="'+i+'" value="'+(e.s!==''?minToHM(e.s):'')+'">'
+      +'<input type="time" class="ren" data-i="'+i+'" value="'+(e.e!==''?minToHM(e.e):'')+'">'
+      +'<input class="rloc" data-i="'+i+'" value="'+esc(e.loc)+'">'
+      +'<button class="btn danger" data-del="'+i+'" style="padding:3px 8px;font-size:.75rem">删</button></div>';
+  }).join('');
+  box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',function(){const i=+this.dataset.del;imgS.entries.splice(i,1);renderReview()}));
+  document.getElementById('imgReview').scrollTop=0;
+  hideOcr();
+}
+document.getElementById('btnImportImg').addEventListener('click',function(){
+  if(!imgS.entries||!imgS.entries.length){toast('没有可导入的数据');return}
+  const rows=document.querySelectorAll('#imgReview .rev-row');
+  let n=0,skip=0;
+  rows.forEach(row=>{
+    const chk=row.querySelector('.rchk');if(!chk||!chk.checked)return;
+    const day=+row.querySelector('.rday').value;
+    const name=row.querySelector('.rname').value.trim();
+    const s=toMin(row.querySelector('.rst').value||'');
+    const e=toMin(row.querySelector('.ren').value||'');
+    const loc=row.querySelector('.rloc').value.trim();
+    if(!name||!day||!row.querySelector('.rst').value||!row.querySelector('.ren').value||e<=s){skip++;return}
+    state.courses.push({id:uid(),name,day,start:s,end:e,loc,teacher:'',color:colorFor(name)});
+    n++;
+  });
+  if(n){save();renderAll()}
+  toast(n>0?('已导入 '+n+' 门课程'+(skip?('，跳过 '+skip+' 条未填完整'):'')):'没有符合条件的课程（请检查星期/时间是否填好）');
+  if(n)document.getElementById('ovImg').classList.remove('show');
+});
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(e){console.warn('SW',e)})})}</script>
 </body>
 </html>
+
+
 
